@@ -5,11 +5,16 @@ Run this script to annotate Seurat clusters with user-defined labels and generat
 
 ### Usage
 `Rscript annotate_clusters.R \`
-`  --anno_file cluster_map_B.txt \`
-`  --rds_file  Result_V1/results/rds/Bsub_recluster.rds \`
-`  --out_dir   Result_V1/results/Bsub_out \`
-`  --prefix    Bcells \`
-`  --genes     SOD1`
+
+`--anno_file cluster_map_B.txt \`
+
+`--rds_file  Result_V1/results/rds/Bsub_recluster.rds \`
+
+`--out_dir   Result_V1/results/Bsub_out \`
+
+`--prefix    Bcells \`
+
+`--genes     SOD1`
 
 ### Description
 This command will:
