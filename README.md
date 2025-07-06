@@ -34,11 +34,14 @@ S2,/path/2/filtered_feature_bc_matrix,batch1,case
 
 --markers_tsv
 
-celltype  gene
-B_cell    CD79A
-B_cell    MS4A1
-T_Naive   CCR7
-
+  celltype  gene
+  
+  B_cell    CD79A
+  
+  B_cell    MS4A1
+  
+  T_Naive   CCR7
+  
 `Rscript sc_subset_recluster.R \`
 
 `  --rds_file  results/PBMC/PBMC_integrated.rds \`
