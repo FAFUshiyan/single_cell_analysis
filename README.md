@@ -1,4 +1,61 @@
 # single cell analysis pipeline(Seurat)
+
+## sc_preprocess_pipeline.R
+
+`Integration + Cluster + Marker`
+`Rscript sc_preprocess_pipeline.R \`
+
+`  --meta_csv   samples_meta.csv \`
+
+`  --out_dir    results/PBMC \`
+
+`  --prefix     PBMC \`
+
+`  --npc        40 \`
+
+`  --resolution 0.6 \`
+
+`  --markers_tsv markers.tsv`
+
+`Integration`
+`Rscript sc_preprocess_pipeline.R \`
+
+ ` --meta_csv samples_meta.csv \`
+
+ ` --out_dir  results/PBMC \`
+
+ ` --prefix   PBMC`
+
+--meta_csv
+
+sample,data_dir,batch,group
+S1,/path/1/filtered_feature_bc_matrix,batch1,control
+S2,/path/2/filtered_feature_bc_matrix,batch1,case
+
+--markers_tsv
+
+celltype  gene
+B_cell    CD79A
+B_cell    MS4A1
+T_Naive   CCR7
+
+`Rscript sc_subset_recluster.R \`
+
+`  --rds_file  results/PBMC/PBMC_integrated.rds \`
+
+`  --clusters  6,17,19,29 \`
+
+`  --subset    Bcells \`
+
+`  --out_dir   results/Bcells \`
+
+`  --npc       30 \`
+
+`  --resolution 1.0 \`
+
+`  --markers_tsv markers.tsv`
+
+
 ## annotate_clusters.R
 
 Run this script to annotate Seurat clusters with user-defined labels and generate gene expression plots.
