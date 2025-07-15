@@ -94,9 +94,11 @@ Path to a text file mapping cluster IDs to human-readable labels. Each line must
 php-template
 
 `<cluster_id>,<annotation_label>`
+
 For example:
 
 `29,CD8 MAIT`
+
 `34,CD4 T NAIVE`
 
 --rds_file
