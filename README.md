@@ -41,7 +41,8 @@ S2,/path/2/filtered_feature_bc_matrix,batch1,case
   B_cell    MS4A1
   
   T_Naive   CCR7
-  
+
+## sc_subset_recluster.R 
 `Rscript sc_subset_recluster.R \`
 
 `  --rds_file  results/PBMC/PBMC_integrated.rds \`
