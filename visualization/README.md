@@ -4,7 +4,7 @@
 
 ```bash
 #用 cell_type 作 cluster
-Rscript run_weighted_vln_celltype.R \
+Rscript Vioplot.R \
   --rds Seurat_pmbc.rds \
   --genes genes.tsv \
   --group_by cell_type \
@@ -14,7 +14,7 @@ Rscript run_weighted_vln_celltype.R \
   --width 4 \
   --height 2
 #自定义 cell_type 顺序
-Rscript run_weighted_vln_celltype.R \
+Rscript Vioplot.R \
   --rds Seurat_pmbc.rds \
   --genes genes.tsv \
   --group_by cell_type \
