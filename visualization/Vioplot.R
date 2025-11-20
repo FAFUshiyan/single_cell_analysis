@@ -141,37 +141,38 @@ WeightedVln_clip3 <- function(
   }
   if (is.null(gene_label)) gene_label <- gene_at
 
-  # 1. 取表达 + cluster 信息
+  ## 1) 取表达 + cluster 信息（全量）
   df <- FetchData(seu, vars = c(gene_at, group.by))
   colnames(df) <- c("expr", "cluster")
 
-  # 阈值过滤
+  ## 2) 阈值过滤：小于 min_expr 视为 0（但不再 stop）
   df$expr <- ifelse(df$expr >= min_expr, df$expr, 0)
-
   if (all(df$expr == 0)) {
-    stop(sprintf("%s 在所有细胞中表达 < %.2f，过滤后全为 0", gene_at, min_expr))
+    message(sprintf(
+      "[%s] 没有细胞 expr >= %.2f，将输出空图（保留所有 cluster 位置）",
+      gene_label, min_expr
+    ))
   }
 
-  # cluster 因子顺序
+  ## 3) 确定“全量 cluster levels”
   cluster_chr <- as.character(df$cluster)
 
   if (!is.null(cluster_order)) {
-    lev <- cluster_order[cluster_order %in% unique(cluster_chr)]
-    if (length(lev) == 0) stop("cluster_order 与数据无匹配。")
-    df$cluster <- factor(cluster_chr, levels = lev)
+    lev_all <- cluster_order[cluster_order %in% unique(cluster_chr)]
+    if (length(lev_all) == 0) stop("cluster_order 与数据无匹配。")
   } else {
-    # 若 meta.data 本身是 factor，则按其 levels；否则按字母顺序
-    if (is.factor(seu@meta.data[[group.by]])) {
-      lev <- levels(seu@meta.data[[group.by]])
-      lev <- lev[lev %in% unique(cluster_chr)]
-      df$cluster <- factor(cluster_chr, levels = lev)
+    # 如果 meta 是 factor，用其 levels；否则按字母顺序
+    if (group.by != "ident" && is.factor(seu@meta.data[[group.by]])) {
+      lev_all <- levels(seu@meta.data[[group.by]])
+      lev_all <- lev_all[lev_all %in% unique(cluster_chr)]
     } else {
-      lev <- sort(unique(cluster_chr))
-      df$cluster <- factor(cluster_chr, levels = lev)
+      lev_all <- sort(unique(cluster_chr))
     }
   }
 
-  # 2. 每个 cluster 的阳性比例
+  df$cluster <- factor(cluster_chr, levels = lev_all)
+
+  ## 4) 每个 cluster 的阳性比例 pct_pos（>= min_expr 视为阳性）
   cluster_stats <- df %>%
     group_by(cluster) %>%
     summarise(
@@ -181,84 +182,107 @@ WeightedVln_clip3 <- function(
       .groups = "drop"
     )
 
-  if (all(cluster_stats$pct_pos == 0)) stop("所有 cluster expr 都为 0，无法加权")
+  ## 5) 权重：如果 max pct_pos = 0（全无表达），weight 全为 0
+  max_pct <- max(cluster_stats$pct_pos)
+  if (max_pct == 0) {
+    cluster_stats$weight <- 0
+  } else {
+    cluster_stats <- cluster_stats %>%
+      mutate(weight = pct_pos / max_pct)
+  }
 
-  cluster_stats <- cluster_stats %>%
-    mutate(weight = pct_pos / max(pct_pos))
-
-  # 3. 合并权重，计算加权表达
-  df_w <- df %>%
-    left_join(cluster_stats[, c("cluster", "weight")], by = "cluster") %>%
-    mutate(expr_weighted = expr * weight)
-
-  # 导出权重表（可选）
+  ## 可选导出权重
   if (export_weights) {
     write_tsv(cluster_stats, sub("\\.pdf$", ".weights.tsv", file))
   }
 
-  # 4. 只画阳性细胞
-  df_plot <- df_w %>% filter(expr > 0)
-  if (nrow(df_plot) == 0) stop("没有 expr>=min_expr 的细胞")
+  ## 6) 合并权重，计算加权表达
+  df_w <- df %>%
+    left_join(cluster_stats[, c("cluster", "weight")], by = "cluster") %>%
+    mutate(expr_weighted = expr * weight)
 
-  # 5. 裁剪
+  ## 7) 只用阳性细胞画“点云”
+  df_pos <- df_w %>% filter(expr > 0)
+
+  ## 8) 用阳性细胞算 violin；若某些 cluster 无阳性，补 dummy 0
+  df_plot <- df_pos
+  miss_lev <- setdiff(lev_all, unique(as.character(df_pos$cluster)))
+  if (length(miss_lev) > 0) {
+    dummy <- data.frame(
+      expr          = 0,
+      cluster       = factor(miss_lev, levels = lev_all),
+      weight        = cluster_stats$weight[match(miss_lev, as.character(cluster_stats$cluster))],
+      expr_weighted = 0
+    )
+    df_plot <- bind_rows(df_plot, dummy)
+  }
+
+  ## 9) 裁剪到 [0, ymax]
   df_plot <- df_plot %>%
     mutate(expr_plot = pmin(expr_weighted, ymax))
 
-  # 6. 中位数线
-  df_med <- df_plot %>%
+  ## 10) 中位数（只对阳性算）
+  df_med <- df_pos %>%
     group_by(cluster) %>%
-    summarise(med = median(expr_plot, na.rm=TRUE), .groups="drop")
-  df_med$x     <- as.numeric(df_med$cluster)
-  df_med$x_min <- df_med$x - 0.18
-  df_med$x_max <- df_med$x + 0.18
+    summarise(med = median(pmin(expr_weighted, ymax), na.rm = TRUE), .groups="drop")
 
-  # 7. 颜色映射
-  scale_col_layer <- NULL
-  if (!is.null(cluster_palette)) {
-    lev <- levels(df_plot$cluster)
-    if (!is.null(names(cluster_palette)) && all(lev %in% names(cluster_palette))) {
-      cols <- cluster_palette[lev]
-    } else {
-      cols <- cluster_palette[seq_len(min(length(cluster_palette), length(lev)))]
-      names(cols) <- lev[seq_along(cols)]
-    }
-    scale_col_layer <- scale_colour_manual(values = cols)
+  if (nrow(df_med) > 0) {
+    df_med$x     <- as.numeric(df_med$cluster)
+    df_med$x_min <- df_med$x - 0.18
+    df_med$x_max <- df_med$x + 0.18
   }
 
-  # 8. 作图
+  ## 11) 颜色映射
+  scale_col_layer <- NULL
+  if (!is.null(cluster_palette)) {
+    if (!is.null(names(cluster_palette)) && all(lev_all %in% names(cluster_palette))) {
+      cols <- cluster_palette[lev_all]
+    } else {
+      cols <- cluster_palette[seq_len(min(length(cluster_palette), length(lev_all)))]
+      names(cols) <- lev_all[seq_along(cols)]
+    }
+    scale_col_layer <- scale_colour_manual(values = cols, drop = FALSE)
+  }
+
+  ## 12) 作图
   pdf(file, width = width, height = height)
 
   p <- ggplot(df_plot, aes(x = cluster, y = expr_plot)) +
     geom_violin(
       aes(group = cluster),
-      scale  = "width", width = 0.5, trim = TRUE,
-      fill   = "grey90", colour = NA
+      scale="width", width=0.5, trim=TRUE,
+      fill="grey90", colour=NA
     ) +
+    # 点云只画阳性细胞
     geom_point(
-      aes(colour = cluster),
+      data = df_pos,
+      aes(colour = cluster, y = pmin(expr_weighted, ymax)),
       position = position_jitter(width=0.3, height=0),
-      size     = 0.28, alpha=0.35
+      size=0.28, alpha=0.35
     ) +
     geom_violin(
       aes(group = cluster),
       scale="width", width=0.5, trim=TRUE,
       fill=NA, colour="black", linewidth=0.22
     ) +
-    geom_segment(
-      data=df_med,
-      aes(x=x_min, xend=x_max, y=med, yend=med),
-      inherit.aes=FALSE, colour="black", linewidth=0.25, lineend="round"
-    ) +
+    # 中位数线：仅阳性 cluster 才有
+    {if (nrow(df_med) > 0)
+      geom_segment(
+        data=df_med,
+        aes(x=x_min, xend=x_max, y=med, yend=med),
+        inherit.aes=FALSE, colour="black", linewidth=0.25, lineend="round"
+      )
+    } +
     scale_y_continuous(
       limits=c(0, ymax),
       breaks=seq(0, ymax, by=1),
       labels=as.character(seq(0, ymax, by=1))
     ) +
+    scale_x_discrete(drop = FALSE) +   # ✅ 核心：保留空 cluster 位置
     labs(x = group.by, y = "weighted expression (clipped)") +
     theme_classic(base_size=7) +
     theme(
       axis.text.x = element_text(angle=45, hjust=1),
-      plot.title = element_blank(),
       legend.position="none",
       axis.line.x = element_line(colour="grey75", linetype="dashed", linewidth=0.5),
       axis.line.y = element_line(colour="black", linewidth=0.5),
